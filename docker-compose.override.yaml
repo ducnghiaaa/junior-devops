@@ -1,0 +1,10 @@
+version: '3.9'
+services:
+  app:
+    volumes:
+      - ./app:/app   # Live reload
+    environment:
+      - NODE_ENV=development
+  db:
+    ports:
+      - "5432:5432"  # Expose để dùng DB tool local
