@@ -1,0 +1,21 @@
+# Secrers - NEVER commit
+.env
+*.env.local
+*.pem
+*.key
+id_rsa*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Node
+node_modules/
+
+# Docker volumes
+data/
+postgres_data/
