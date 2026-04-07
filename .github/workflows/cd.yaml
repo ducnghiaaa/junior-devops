@@ -20,7 +20,7 @@ jobs:
           port: 2121
           script: |
             set -e
-            cd /opt/webapp
+            cd /home/nghiand/junior-devops
             docker compose pull app
             docker compose up -d --no-build --remove-orphans
             docker image prune -f
