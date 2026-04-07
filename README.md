@@ -26,9 +26,18 @@ mkdir docker-webapp && cd docker-webapp
 cat > app.js << 'EOF'
 const express = require('express');
 const app = express();
-app.get('/', (req, res) => res.json({ status: 'ok', service: 'webapp' }));
-app.get('/health', (req, res) => res.json({ status: 'healthy' }));
-app.listen(3000, () => console.log('App running on port 3000'));
+
+app.get('/', (req, res) => res.json({
+  status: 'ok', service: 'webapp',
+  timestamp: new Date().toISOString()
+}));
+app.get('/health', (req, res) => res.json({ status: 'healthy', uptime: process.uptime() }));
+app.get('/metrics', (req, res) => {
+  res.set('Content-Type', 'text/plain');
+  res.send(`app_uptime_seconds ${process.uptime()}\n`);
+});
+
+app.listen(process.env.PORT || 3000, () => console.log('App running on port 3000'));
 EOF
 
 cat > package.json << 'EOF'
@@ -43,23 +52,26 @@ EOF
 
 **Bước 2: Tạo Dockerfile**
 ```dockerfile
-# Dockerfile
-FROM node:20-alpine
-
-# Non-root user (security best practice)
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+FROM node:20-alpine AS deps
 
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --only=production
+# docker run --rm -v "$PWD":/app -w /app node:20-alpine npm install
 
+FROM node:20-alpine AS runtime
+
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
 COPY --chown=appuser:appgroup . .
+
 USER appuser
 
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s \
   CMD wget -qO- http://localhost:3000/health || exit 1
-
 CMD ["npm", "start"]
 ```
 
@@ -68,17 +80,13 @@ CMD ["npm", "start"]
 # nginx/default.conf
 upstream webapp {
     server app:3000;
+    keepalive 32;
 }
 
 server {
     listen 80;
     server_name localhost;
 
-    # Logging
-    access_log /var/log/nginx/webapp_access.log;
-    error_log  /var/log/nginx/webapp_error.log;
-
-    # Security headers
     add_header X-Frame-Options "SAMEORIGIN";
     add_header X-Content-Type-Options "nosniff";
 
@@ -87,6 +95,7 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_http_version 1.1;
         proxy_connect_timeout 30s;
         proxy_read_timeout 60s;
     }
@@ -100,14 +109,13 @@ server {
 
 **Bước 4: Docker Compose**
 ```yaml
-# docker-compose.yml
 version: '3.9'
 
 services:
   nginx:
     image: nginx:alpine
     ports:
-      - "80:80"
+      - "8080:80" #change left port if I'd like using port other
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - nginx_logs:/var/log/nginx
@@ -117,7 +125,7 @@ services:
     restart: unless-stopped
 
   app:
-    build: .
+    build: ./app
     environment:
       - NODE_ENV=production
       - DB_HOST=db
@@ -163,6 +171,18 @@ curl http://localhost/health
 
 # Xem resource usage
 docker stats
+
+git add .
+git commit -m "feat(docker): add containerized webapp with nginx reverse proxy
+
+- Multi-stage Dockerfile (minimal image size, non-root user)
+- Nginx reverse proxy with keepalive and security headers
+- PostgreSQL with persistent volume and health checks
+- docker-compose.override.yml for local dev convenience"
+
+git push origin feature/docker-setup
+# ➡️ Mở Pull Request: feature/docker-setup → develop
+# ➡️ Review → Merge
 ```
 
 ### ✅ Checklist Hoàn Thành
@@ -171,7 +191,7 @@ docker stats
 - [ ] PostgreSQL có persistent volume
 - [ ] Health check hoạt động
 - [ ] `.env` file cho sensitive data, không hardcode
-
+- [ ] Pull Request, branch merge to develop after approved
 ---
 
 ## J2 — CI/CD Pipeline Cơ Bản với GitHub Actions
